@@ -21,10 +21,9 @@ import java.beans.PropertyChangeListener;
 import java.text.NumberFormat;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
-import java.util.Currency;
 import java.util.Date;
 import java.util.GregorianCalendar;
-import java.util.Vector;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import javax.swing.BorderFactory;
@@ -33,7 +32,6 @@ import javax.swing.JButton;
 import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
-import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTabbedPane;
@@ -47,13 +45,13 @@ import javax.swing.border.BevelBorder;
 import javax.swing.border.LineBorder;
 import javax.swing.text.JTextComponent;
 
-import org.omg.Messaging.SyncScopeHelper;
-
 import com.toedter.calendar.JDateChooser;
 
+import configuration.ConfigXML;
 import domain.Booking;
 import domain.Client;
 import domain.Offer;
+import exceptions.BadDatesException;
 import gui.components.FrameShader;
 import gui.components.ImagePanel;
 import gui.components.InfoTextPane;
@@ -144,7 +142,7 @@ public class OfferInfoDialog extends JDialog {
 		gbl_contentPanel.rowWeights = new double[]{0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, Double.MIN_VALUE};
 		contentPanel.setLayout(gbl_contentPanel);
 
-		
+
 		// --------------------------------------------------------------------
 		//  Dialog title bar setup
 		// --------------------------------------------------------------------
@@ -364,12 +362,17 @@ public class OfferInfoDialog extends JDialog {
 	private ImagePanel getImagePanel() {
 		if(imagePanel == null) {	
 			imagePanel = new ImagePanel();
-			Vector<Offer> offer = MainWindow.getBusinessLogic().getOffer(rowContent.getElement().getRuralHouse(), rowContent.getElement().getStartDate(), rowContent.getElement().getEndDate());
-			ImageIcon imageIcon = offer.get(0).getRuralHouse().getImage(0);
-			System.out.println("Showing offer: " + offer);
-			imagePanel.setImage(imageIcon);
-			imagePanel.setBorder(new LineBorder(new Color(0, 0, 0)));
-			imagePanel.setMinimumSize(imagePanel.getImageSize());
+			List<Offer> offer;
+			try {
+				offer = MainWindow.getBusinessLogic().getOffers(rowContent.getElement().getRuralHouse(), rowContent.getElement().getStartDate(), rowContent.getElement().getEndDate());
+				ImageIcon imageIcon = offer.get(0).getRuralHouse().getImage(0);
+				System.out.println("Showing offer: " + offer);
+				imagePanel.setImage(imageIcon);
+				imagePanel.setBorder(new LineBorder(new Color(0, 0, 0)));
+				imagePanel.setMinimumSize(imagePanel.getImageSize());
+			} catch (BadDatesException e) {
+				e.printStackTrace();
+			}			
 		}
 		return imagePanel;
 	}
@@ -543,8 +546,8 @@ public class OfferInfoDialog extends JDialog {
 
 	private JLabel getLblPrice() {
 		if(lblPrice == null) {
-			NumberFormat formatter = NumberFormat.getCurrencyInstance(MainWindow.getBusinessLogic().getLocale());
-			lblPrice = new JLabel("Price (" + formatter.format(rowContent.getElement().getPrice()) + " per night): ");
+			NumberFormat currencyFormatter = ConfigXML.getInstance().getLocale().getNumberFormatter();
+			lblPrice = new JLabel("Price (" + currencyFormatter.format(rowContent.getElement().getPrice()) + " per night): ");
 		}
 		return lblPrice;
 	}
@@ -567,7 +570,11 @@ public class OfferInfoDialog extends JDialog {
 			btnBookOffer.addActionListener(new ActionListener() {
 				@Override
 				public void actionPerformed(ActionEvent e) {	
-					Booking booking = MainWindow.getBusinessLogic().createBooking((Client)MainWindow.user, rowContent.getElement(), firstDate.getTime(), lastDate.getTime());
+					try {
+						Booking booking = MainWindow.getBusinessLogic().createBooking((Client)MainWindow.user, rowContent.getElement(), firstDate.getTime(), lastDate.getTime());
+					} catch (BadDatesException e1) {
+						e1.printStackTrace();
+					}
 					//	MainWindow.getPropertyChangeSupport().firePropertyChange("bookingAdded", null, booking);	
 					BookingsTablePanel.getPropertyChangeSupport().firePropertyChange("rowInserted", null, rowContent);
 					frameShader.setEnabled(false);
@@ -589,10 +596,10 @@ public class OfferInfoDialog extends JDialog {
 	}
 
 	private void updatePrice() {
-		if(firstDate != null && lastDate != null) {
-			NumberFormat formatter = NumberFormat.getCurrencyInstance(MainWindow.getBusinessLogic().getLocale());
-			textFieldPrice.setText(formatter.format(getPrice()));	
-			btnBookOffer.setEnabled(true);
+		if(firstDate != null && lastDate != null) {	
+			NumberFormat currencyFormatter = ConfigXML.getInstance().getLocale().getNumberFormatter();
+			textFieldPrice.setText(currencyFormatter.format(getPrice()));	
+			btnBookOffer.setEnabled(true);			
 		}
 	}
 

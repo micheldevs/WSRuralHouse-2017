@@ -8,15 +8,23 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.Date;
-import java.util.Iterator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Vector;
+import java.util.stream.Collectors;
 
 import javax.imageio.ImageIO;
 import javax.persistence.CascadeType;
 import javax.persistence.Entity;
+import javax.persistence.FetchType;
 import javax.persistence.GeneratedValue;
 import javax.persistence.Id;
+import javax.persistence.OneToMany;
 import javax.persistence.OneToOne;
 import javax.swing.ImageIcon;
 import javax.xml.bind.annotation.XmlAccessType;
@@ -24,11 +32,13 @@ import javax.xml.bind.annotation.XmlAccessorType;
 import javax.xml.bind.annotation.XmlID;
 import javax.xml.bind.annotation.adapters.XmlJavaTypeAdapter;
 
+import domain.event.EventPublisher;
+import domain.event.ValueAddedListener;
 import domain.util.IntegerAdapter;
 
 @XmlAccessorType(XmlAccessType.FIELD)
 @Entity
-public class RuralHouse implements Serializable {
+public class RuralHouse extends EventPublisher<ValueAddedListener<Offer>> implements Serializable {
 
 	/**
 	 * Generated serial version ID
@@ -51,34 +61,23 @@ public class RuralHouse implements Serializable {
 	private String address;
 	private Owner owner;
 	//@OneToOne(fetch=FetchType.LAZY, cascade={CascadeType.PERSIST, CascadeType.REMOVE}, orphanRemoval=true, optional=false)
-	@OneToOne(cascade=CascadeType.ALL)
+	@OneToOne(fetch=FetchType.LAZY, cascade=CascadeType.ALL, orphanRemoval=true)
 	private Review review;
 	/**
 	 * The image in the first position (<i>index 0</i>) of the {@code Vector} will be used as the
 	 * rural house image icon.
 	 */
 	@OneToOne(cascade=CascadeType.ALL)
-	private Vector<byte[]> images;
-	private String[] tags;                
+	private List<byte[]> images;
+	private String[] tags;
 
-	public Vector<Offer> offers;
+	//@OneToMany(fetch=FetchType.LAZY, cascade=CascadeType.ALL, orphanRemoval=true)
+	@OneToMany(mappedBy = "ruralHouse", fetch = FetchType.LAZY, cascade = CascadeType.ALL, orphanRemoval = true)
+	private Map<Integer, Offer> offers;
 
 	public RuralHouse() {
 		this.review = new Review(this);
-	}
-
-	/**
-	 * Constructor of {@code RuralHouse}.
-	 * 
-	 * @param owner the owner of the rural house
-	 * @param description a short text that describes the rural house 
-	 * @param city the city where the rural house is located
-	 * @param address the address where the rural house is
-	 * @deprecated No longer the rural house name is optional, so this constructor will be removed in a near future
-	 */
-	@Deprecated
-	public RuralHouse(Owner owner, String description, City city, String address) {
-		this(owner, null, description, city, address);
+		this.offers =  Collections.synchronizedMap(new HashMap<Integer, Offer>());
 	}
 
 	/**
@@ -95,15 +94,14 @@ public class RuralHouse implements Serializable {
 	 * @see Review.ReviewState
 	 */
 	public RuralHouse(Owner owner, String name, String description, City city, String address) {
+		this();
 		this.owner = owner;
 		owner.getRuralHouses().add(this);
 		this.name = name;
 		this.description = description;
 		this.city = city;
 		this.address = address;
-		this.review = new Review(this);
-		offers = new Vector<Offer>();
-		images = new Vector<byte[]>();
+		this.images = new Vector<byte[]>();
 	}
 
 	public Integer getId() {
@@ -151,7 +149,7 @@ public class RuralHouse implements Serializable {
 	 * 
 	 * @return the image vector
 	 */
-	public Vector<byte[]> getImages() {
+	public List<byte[]> getImages() {
 		return images;
 	}
 
@@ -189,7 +187,7 @@ public class RuralHouse implements Serializable {
 	 * 
 	 * @param imagePath path to the element to be appended to the <code>Vector</code>
 	 * @return <code>true</code> if the image is added to the <code>Vector</code> 
-	 * @throws IOException 
+	 * @throws IOException if an I/O error occurs reading from the stream
 	 */
 	public boolean addImage(String imagePath) throws IOException {
 		Path path = Paths.get(imagePath);
@@ -199,9 +197,9 @@ public class RuralHouse implements Serializable {
 	/**
 	 * Appends the specified image to the end of the image <code>Vector</code>.
 	 * 
-	 * @param URI uri the URI of the element to be appended to the <code>Vector</code>
+	 * @param uri the URI of the element to be appended to the <code>Vector</code>
 	 * @return <code>true</code> if the image is added to the <code>Vector</code> 
-	 * @throws IOException 
+	 * @throws IOException if an I/O error occurs reading from the stream
 	 */
 	public boolean addImage(URI uri) throws IOException {
 		Path path = Paths.get(uri);
@@ -231,7 +229,7 @@ public class RuralHouse implements Serializable {
 	 * @param image element to be removed from this Vector, if present
 	 * @return true if it contained the specified element
 	 */
-	public boolean removeImage(ImageIcon image) {
+	public boolean removeImage(byte[] image) {
 		return images.remove(image);
 	}
 
@@ -260,38 +258,40 @@ public class RuralHouse implements Serializable {
 	}
 
 	/**
-	 * This method creates an offer with a house number, first day, last day and price
+	 * Adds an offer to the rural house
 	 * 
-	 * @param House
-	 *            number, start day, last day and price
-	 * @return None
+	 * @param offer the offer to add
 	 */
-	public Offer createOffer(Date firstDay, Date lastDay, double price)  {
-		System.out.println("LLAMADA RuralHouse createOffer, offerNumber="+" firstDay="+firstDay+" lastDay="+lastDay+" price="+price);
-		Offer offer = new Offer(firstDay, lastDay, price, this);
-		offers.add(offer);
-		return offer;
+	public void addOffer(Offer offer) {
+		offers.put(offer.getId(), offer);
+		// Notify the list of registered listeners
+		this.notifyListeners((listener) -> listener.onValueAdded(Optional.ofNullable(offer)));
+	}
+
+	/**
+	 * Get an offer with the given id
+	 * 
+	 * @param id the id of the offer
+	 * @return the offer 
+	 */
+	public Offer getOffer(int id) {
+		return offers.get(id);
 	}
 
 
 	/**
 	 * This method obtains available offers for a concrete house in a certain period 
 	 * 
-	 * @param houseNumber, the house number where the offers must be obtained 
-	 * @param firstDay, first day in a period range 
-	 * @param lastDay, last day in a period range
+	 * @param firstDay first day in a period range 
+	 * @param lastDay last day in a period range
 	 * @return a vector of offers(Offer class)  available  in this period
 	 */
-	public Vector<Offer> getOffers(Date firstDay,  Date lastDay) {
-
-		Vector<Offer> availableOffers=new Vector<Offer>();
-		Iterator<Offer> e = offers.iterator();
-		Offer offer;
-		while (e.hasNext()){
-			offer=e.next();
-			if ( (offer.getStartDate().compareTo(firstDay)>=0) && (offer.getEndDate().compareTo(lastDay)<=0)  )
-				availableOffers.add(offer);
-		}
+	public List<Offer> getOffers(Date firstDay,  Date lastDay) {
+		List<Offer> availableOffers = offers.entrySet()
+				.stream()
+				.map(entry -> entry.getValue())
+				.filter((offer) -> offer.getStartDate().compareTo(firstDay) >= 0 && offer.getEndDate().compareTo(lastDay) <= 0)
+				.collect(Collectors.toList());
 		return availableOffers;
 	}
 
@@ -300,33 +300,25 @@ public class RuralHouse implements Serializable {
 	 * 
 	 * @return a vector of {@code Offers}
 	 */
-	public Vector<Offer> getOffers() {
+	public Collection<Offer> getOffers() {
 		System.out.println(offers);
-		if(offers != null) {
-			if(!offers.isEmpty()) {
-				return offers;			
-			}
-		}
-		return new Vector<>();
+		return offers.values();
 	}
 
 	/**
 	 * This method obtains the first offer that overlaps with the provided dates
 	 * 
-	 * @param firstDay, first day in a period range 
-	 * @param lastDay, last day in a period range
+	 * @param firstDay first day in a period range 
+	 * @param lastDay last day in a period range
 	 * @return the first offer that overlaps with those dates, or null if there is no overlapping offer
 	 */
-	public Offer overlapsWith( Date firstDay,  Date lastDay) {
-
-		Iterator<Offer> e=offers.iterator();
-		Offer offer=null;
-		while (e.hasNext()){
-			offer=e.next();
-			if ( (offer.getStartDate().compareTo(lastDay)<0) && (offer.getEndDate().compareTo(firstDay)>0))
-				return offer;
-		}
-		return null;
+	public Optional<Offer> overlapsWith(Date firstDay,  Date lastDay) {
+		Optional<Offer> optOffer = offers.entrySet()
+				.stream()
+				.map(entry -> entry.getValue())
+				.filter((offer) -> offer.getEndDate().after(firstDay) && offer.getStartDate().before(lastDay))
+				.findFirst();
+		return optOffer;
 	}
 
 	public String toDetailedString() {
@@ -358,7 +350,7 @@ public class RuralHouse implements Serializable {
 			return false;
 		if (getClass() != obj.getClass())
 			return false;
-		//		if (houseNumber != other.houseNumber) // NO COMPARAR ASÕ ya que houseNumber NO ES "int" sino objeto de "java.lang.Integer"
+		//		if (houseNumber != other.houseNumber) // NO COMPARAR AS√ç ya que houseNumber NO ES "int" sino objeto de "java.lang.Integer"
 		if (!id.equals(other.id))
 			return false;
 		return true;

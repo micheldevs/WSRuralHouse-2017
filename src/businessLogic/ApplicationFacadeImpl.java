@@ -1,7 +1,9 @@
 package businessLogic;
 
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Vector;
 import java.util.stream.Collectors;
 
@@ -16,8 +18,10 @@ import domain.Owner;
 import domain.Review;
 import domain.RuralHouse;
 import domain.AbstractUser;
-import domain.AbstractUser.Role;
 import domain.Review.ReviewState;
+import domain.util.ExtendedIterator;
+import domain.util.RuralHouseIterator;
+import domain.UserType;
 import domain.City;
 import domain.Client;
 import exceptions.AuthException;
@@ -33,6 +37,13 @@ public final class ApplicationFacadeImpl  implements ApplicationFacadeInterface 
 	private DataAccessInterface dataAccess;
 	private Locale locale;
 
+	public ApplicationFacadeImpl() {
+	}
+	
+	public ApplicationFacadeImpl(DataAccessInterface dataAccess) {
+		setDataAccess(dataAccess);
+	}
+	
 	public void setDataAccess(DataAccessInterface dataAccess) {
 		this.dataAccess = dataAccess;
 	}
@@ -47,6 +58,17 @@ public final class ApplicationFacadeImpl  implements ApplicationFacadeInterface 
 		return dataAccess.remove(entity);
 	}
 	
+	@Override
+	public <T, K> T remove(Class<T> entityClass, K primaryKey) {
+		return dataAccess.remove(entityClass, primaryKey);
+	}
+	
+	@Override
+	public <T, K> T find(Class<T> entityClass, K primaryKey) {
+		return dataAccess.find(entityClass, primaryKey);
+	}
+	
+	@Override
 	public Offer createOffer(RuralHouse ruralHouse, Date firstDay, Date lastDay, double price) throws OverlappingOfferException, BadDatesException {
 		System.out.println(">> ApplicationFacadeImpl: createOffer=> ruralHouse= "+ruralHouse+" firstDay= "+firstDay+" lastDay="+lastDay+" price="+price);
 
@@ -56,9 +78,11 @@ public final class ApplicationFacadeImpl  implements ApplicationFacadeInterface 
 			throw new BadDatesException();
 		}
 
-		if (!dataAccess.existsOverlappingOffer(ruralHouse,firstDay,lastDay)) {
-			offer = dataAccess.createOffer(ruralHouse,firstDay,lastDay,price);		
+		if (dataAccess.existsOverlappingOffer(ruralHouse, firstDay, lastDay)) {
+			throw new OverlappingOfferException();		
 		}
+		
+		offer = dataAccess.createOffer(ruralHouse, firstDay, lastDay, price);
 
 		System.out.println("<< ApplicationFacadeImpl: createOffer=> O= " + offer);
 		return offer;
@@ -66,27 +90,30 @@ public final class ApplicationFacadeImpl  implements ApplicationFacadeInterface 
 
 	@WebMethod
 	@Override
-	public Vector<Offer> getOffer(RuralHouse ruralHouse, Date firstDay,  Date lastDay) {
-		return new Vector<Offer>(dataAccess.getOffer(ruralHouse, firstDay, lastDay));
+	public Vector<Offer> getOffers(RuralHouse ruralHouse, Date firstDay,  Date lastDay) throws BadDatesException {
+		if (firstDay.compareTo(lastDay) >= 0) {
+			throw new BadDatesException();
+		}
+		return new Vector<Offer>(dataAccess.getOffers(ruralHouse, firstDay, lastDay));
 	}
 
 	@Override
-	public Vector<Offer> getOffers() {
+	public List<Offer> getOffers() {
 		return dataAccess.getOffers();
 	}
 
 	@Override
-	public Vector<Offer> getOffers(ReviewState reviewState) {
+	public List<Offer> getOffers(ReviewState reviewState) {
 		return dataAccess.getOffers(reviewState);
 	}
 
 	@Override
-	public Vector<Offer> getActiveOffers() {
+	public List<Offer> getActiveOffers() {
 		return dataAccess.getActiveOffers();
 	}
 
 	@Override
-	public Vector<Offer> getActiveOffers(ReviewState reviewState) {
+	public List<Offer> getActiveOffers(ReviewState reviewState) {
 		return dataAccess.getActiveOffers(reviewState);
 	}
 
@@ -117,9 +144,9 @@ public final class ApplicationFacadeImpl  implements ApplicationFacadeInterface 
 	}
 
 	@Override
-	public Vector<RuralHouse> getRuralHouses()  {
-		System.out.println(">> ApplicationFacadeImpl: getRuralHouses");
-		return dataAccess.getRuralHouses();
+	public ExtendedIterator<RuralHouse> ruralHouseIterator()  {
+		System.out.println(">> ApplicationFacadeImpl: ruralHouseIterator");
+		return new RuralHouseIterator(dataAccess.getRuralHouses());
 	}
 
 	@Override
@@ -157,11 +184,12 @@ public final class ApplicationFacadeImpl  implements ApplicationFacadeInterface 
 		return new Vector<City>(dataAccess.getCities());
 	}
 
-	public AbstractUser createUser(String email, String username, String password, Role role) throws DuplicatedEntityException {
-		System.out.println(">> ApplicationFacadeImpl: createUser=> email=" + email + "username= " + username + " password= " + password + " role=" + role);
+	@Override
+	public Optional<AbstractUser> createUser(String email, String username, String password, UserType userType) throws DuplicatedEntityException {
+		System.out.println(">> ApplicationFacadeImpl: createUser=> email=" + email + "username= " + username + " password= " + password + " userType=" + userType);
 		if(!dataAccess.existsEmail(email)) {
 			if(!dataAccess.existsUser(username)) {
-				return dataAccess.createUser(email, username, password, role);
+				return dataAccess.createUser(email, username, password, userType);
 			} else {
 				throw new DuplicatedEntityException(Error.DUPLICATED_USERNAME);
 			}
@@ -170,9 +198,9 @@ public final class ApplicationFacadeImpl  implements ApplicationFacadeInterface 
 		}
 	}
 
-	public Role getRole(String username) {
-		Role role = dataAccess.getRole(username);
-		return role;
+	public UserType getUserTypeOf(String username) {
+		UserType userType = dataAccess.getRole(username);
+		return userType;
 	}
 
 	public AbstractUser login(String username, String password) throws AuthException, AccountNotFoundException {
@@ -188,7 +216,10 @@ public final class ApplicationFacadeImpl  implements ApplicationFacadeInterface 
 	}
 
 	@Override
-	public Booking createBooking(Client client, Offer offer, Date startDate, Date endDate) {
+	public Booking createBooking(Client client, Offer offer, Date startDate, Date endDate) throws BadDatesException {
+		if (startDate.compareTo(endDate) >= 0) {
+			throw new BadDatesException();
+		}
 		return dataAccess.createBooking(client, offer, startDate, endDate);
 	}
 
@@ -198,7 +229,7 @@ public final class ApplicationFacadeImpl  implements ApplicationFacadeInterface 
 	}
 
 	public Locale getLocale() {
-		locale = Locale.forLanguageTag(dataAccess.getConfig().getLocale());
+		locale = Locale.forLanguageTag(dataAccess.getConfig().getLocale().name());
 		if(locale == null) {
 			locale = Locale.getDefault();
 		}
@@ -222,6 +253,11 @@ public final class ApplicationFacadeImpl  implements ApplicationFacadeInterface 
 	@Override
 	public Vector<Booking> getBookings() {
 		return dataAccess.getBookings();
+	}
+	
+	@Override
+	public boolean datesRangeOverlap(Date startDate1, Date endDate1, Date startDate2, Date endDate2) {
+		return dataAccess.datesRangeOverlap(startDate1, endDate1, startDate2, endDate2);
 	}
 
 }

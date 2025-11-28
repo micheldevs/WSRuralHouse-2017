@@ -51,6 +51,7 @@ import javax.swing.text.BadLocationException;
 import javax.swing.text.DefaultHighlighter;
 import javax.swing.text.Highlighter;
 
+import configuration.ConfigXML;
 import domain.Offer;
 import domain.Review.ReviewState;
 import gui.components.CustomTable;
@@ -83,8 +84,10 @@ public class ClientMainPanel extends JPanel {
 	private NumberFormat priceFormat;
 
 	/**
-	 * Create the panel.
-	 * @param isLogged 
+	 * Create the panel. If the user is logger the window will show different things than the non logged one.
+	 * 
+	 * @param frame the parent frame
+	 * @param isLogged <code>true</code> if the user is logged, <code>false</code> otherwise
 	 */
 	public ClientMainPanel(JFrame frame, boolean isLogged) {
 
@@ -237,7 +240,7 @@ public class ClientMainPanel extends JPanel {
 
 	private Hashtable<Integer, JLabel> getSliderLabelTable(double minPrice, double maxPrice) {
 
-		NumberFormat currencyFormatter = NumberFormat.getCurrencyInstance(MainWindow.getBusinessLogic().getLocale());
+		NumberFormat currencyFormatter = ConfigXML.getInstance().getLocale().getNumberFormatter();
 
 		Hashtable<Integer, JLabel> labelTable = new Hashtable<Integer, JLabel>();		
 		labelTable.put(getPriceSlider().getMinimum(), new JLabel(currencyFormatter.format(minPrice)));
@@ -272,13 +275,13 @@ public class ClientMainPanel extends JPanel {
 	}
 
 	private void setupNumberFormat() {
-		priceFormat = NumberFormat.getCurrencyInstance(MainWindow.getBusinessLogic().getLocale());
+		priceFormat = ConfigXML.getInstance().getLocale().getNumberFormatter();
 		priceFormat.setMinimumIntegerDigits(1);
 		priceFormat.setMaximumFractionDigits(2);
 	}
 
 	// Create and set up number formats. These objects also parse numbers input by user.
-	//	private void setUpFormats(Locale currentLocale) {
+	//	private void setUpFormats(CurrencyLocale currentLocale) {
 	//		
 	//		System.out.println(currentLocale.getCountry() + " \\\\ " + currentLocale.getLanguage());
 	//
@@ -390,7 +393,7 @@ public class ClientMainPanel extends JPanel {
 				return cellComponent.getElement().getPrice() > minPrice.doubleValue() && cellComponent.getElement().getPrice() <= maxPrice.doubleValue();
 			}
 		};
-		sorter.setRowFilter(filter);		
+		sorter.setRowFilter(filter);
 	}
 
 	/**
@@ -422,7 +425,7 @@ public class ClientMainPanel extends JPanel {
 	}
 
 	// Create and set up number formats. These objects also parse numbers input by user.
-	//	private void setUpFormats(Locale currentLocale) {
+	//	private void setUpFormats(CurrencyLocale currentLocale) {
 	//		
 	//		System.out.println(currentLocale.getCountry() + " \\\\ " + currentLocale.getLanguage());
 	//
@@ -584,7 +587,7 @@ public class ClientMainPanel extends JPanel {
 	 * Set the width of the columns as percentages.
 	 * 
 	 * @param table the {@link JTable} whose columns will be set
-	 * @param percentages the widths of the columns as percentages</p>
+	 * @param percentages the widths of the columns as percentages<p>
 	 * <b>Note</b>: this method does <b>NOT</b> verify that all percentages add up to 100% and for
 	 * the columns to appear properly, it is recommended that the widths for <b>ALL</b> columns be specified.
 	 */
